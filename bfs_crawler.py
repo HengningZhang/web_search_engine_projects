@@ -6,9 +6,11 @@ import urllib.robotparser
 import urllib.request
 import queue
 import time
+import socket
+import validators
 start_time = time.time()
 
-file = open("bfs_cralwer_result.txt","w")
+file = open("bfs_cralwer_result.txt","w",encoding='utf-8')
 
 def finish_time():
     print("--- Finished in %s seconds ---" % (time.time() - start_time))
@@ -34,16 +36,24 @@ def create_robot_parser(url):
 
 def crawl(url, index):
     try:
-        page=urllib.request.urlopen(url)
+        page=urllib.request.urlopen(url,timeout=1)
+    except socket.timeout:
+        file.write(str(index)+" "+ url+" connection time out\n")
+        return None
     except urllib.error.HTTPError as error:
-        print(index, url+" "+str(error.code))
+        file.write(str(index)+" "+ url+" "+str(error.code)+"\n")
         return None
     except urllib.error.URLError:
-        print(index, url+" "+"URLError")
+        file.write(str(index)+" "+ url+" "+"URLError\n")
         return None
-    content=page.read()
+    except Exception as e:
+        return None
+    try:
+        content=page.read()
+    except socket.timeout:
+        return None
     size=len(content)/1024
-    print(index, url+" Size: "+"{:.2f}".format(size)+"kb")
+    file.write(str(index)+" "+ url+" Size: "+"{:.2f}".format(size)+"kb\n")
     return content,url
 
 def get_links(page_content,url):
@@ -55,8 +65,20 @@ def get_links(page_content,url):
     #use a set to filter out duplicates
     linkset=set()
     if base:
-        print(base)
-        url=base[0].get('href')
+        try:
+            url=base[0].get('href')
+            if not validators.url(url):
+                return []
+            file.write("base link: "+url+"\n")
+        except Exception as e:
+            try:
+                file.write(url+"\n")
+            except:
+                file.write("weirder things happened\n")
+                return []
+            file.write("weird thing happened: "+str(e)+"\n")
+            return []
+        
     base_parse_result=urlparse(url)
     current_site=base_parse_result.scheme+"://"+base_parse_result.netloc
     robot_parser=create_robot_parser(current_site)
@@ -115,7 +137,8 @@ def bfs_crawler(query):
                 crawled_site[netloc]+=1
     with concurrent.futures.ThreadPoolExecutor() as executor:
         while result_count<5000 and not q.empty():
-            for _ in range(max(10,result_count)):
+            scheduled_crawl.clear()
+            for _ in range(10):
                 cur_url=q.get()
                 qsize-=1
                 scheduled_crawl.append((counter,cur_url))
@@ -130,7 +153,7 @@ def bfs_crawler(query):
                 result_count+=1
             
 
-            while not batch.empty() and qsize<result_count:
+            while not batch.empty() and qsize<10:
                 crawled_content=batch.get()
                 if not crawled_content:
                     continue
@@ -151,10 +174,8 @@ def bfs_crawler(query):
                                 else:
                                     crawled_site[netloc]+=1
                 # print("qsize:", qsize)
-                print(result_count,qsize)
+                print(result_count,batch.qsize(),qsize)
                 finish_time()
-                if qsize>=result_count:
-                    break
-            
+
 bfs_crawler("brooklyn union")
 finish_time()
