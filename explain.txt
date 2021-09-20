@@ -1,0 +1,111 @@
+How it works:
+
+bfs_crawler():
+Takes 10 search results from google.
+create 2 queues, crawled_pages(to store downloaded but unparsed pages) and q.
+Load all 10 google results into q.
+Then here comes the main loop:
+
+while result_count< designated stop count(12000 in my case):
+
+10 a time, schedule multithreaded tasks for crawling.
+wait for the downloading jobs are done
+After downloading the pages, push the resulting text contents into crawled_pages in the order that they are scheduled.
+
+while there are unparsed and size of q<10:
+    parse some new links and push into q
+
+That is pretty much it for bfs
+
+
+
+prioritized_cralwer()
+
+a class ScoredUrl is created for comparison in the heap.
+a hashmap is created to map site to novelty score.
+priority score is calculated by novelty+importance,  (10/seen_times)+importance
+Because I want new sites to have a novelty score that has a huge impact.
+
+Takes 10 search results from google.
+create a queue crawled_pages(to store downloaded but unparsed pages) 
+and a heap to be used as a priority queue called priority_queue.
+Load all 10 google results into q.
+Then here comes the main loop:
+
+(Multithreaded part is like in bfs.)
+pop the top 10 links with the highest scores, schedule multithreaded tasks for crawling.
+wait for the downloading jobs are done
+After downloading the pages, push the resulting text contents into crawled_pages in the order that they are scheduled.
+
+while there are unparsed and size of q<1000:
+    parse some new links 
+    update the importance score if they exist
+    append to priority queue if they don't
+
+heapify the queue and return to the start of the loop
+
+
+I was going to update the importance for each link in the priority queue when they appear in other pages.
+Then as I think it through, when I want to update a link's priority score it can either be 1) I search for the one I want to update 
+or 2) I store the positions of each link in a hashmap.
+2) is too complicated to implement in 250 lines, because I will need to a) write a whole implementation of heap
+and b) update the position informations of every link on the path when doing insert/update/pop because I would need the position information for
+heap operations.
+1) costs O(n) to search for it, why don't I just use heapify?
+
+So I heapify after pushing all the new links into the priority queue.
+
+1000 is chosen because I don't want there to be too few links in the priority queue and also dont want too many.
+
+
+
+
+
+The major functions are bfs_crawler() and prioritized_crawler().
+miscs:
+craete_robot_parser() creates the robot parser by parsing the robots.txt fetched from the sites.
+is_unwanted_file() checks if a link is a link to a unwanted file.
+crawl() writes into log file as it finishes downloading.
+get_links() filter out links that are crawled / from a site that has been crawled >=10 times / a file that should be ignored.
+
+
+
+Bugs:
+Sometimes froze without exception thrown.
+TL,DR: ThreadPoolExecutor doesn't raise exceptions. I admit I am new to multithreading and this is what I came to.
+
+**updated**
+I forgot to filter out the media files:(
+Ctrl+C works in the older version because it is acting as a manually raised exception.
+It is busy downloading so looks like it froze.
+But strangely the performance is not improving:(
+
+**older version**
+There is this weird bug that the crawler pauses without throwing an exception. 
+After I try to keyboard interrupt with ctrl+C in the terminal, it resumes running like normal.
+This is clearly a problem with the ThreadPoolExecutor, for any exception inside the multithreading part doesn't get thrown.
+I encountered this at very early stage of doing this homework and I had to dissect the program to debug. 
+Those bigger issues cannot be resumed with ctrl-C, and I resolved the bugs I found. 
+I tried to try-catch every function that is called except the file.write() but it is still doing this.
+Maybe write() in python is not thread safe?
+
+
+
+Resources:
+Google search in python
+https://towardsdatascience.com/current-google-search-packages-using-python-3-7-a-simple-tutorial-3606e459e0d4
+Multithreading with python
+https://www.youtube.com/watch?v=IEEhzQoKtQU
+MIME types:
+https://stackoverflow.com/questions/12140460/how-to-skip-some-file-type-while-crawling-with-scrapy
+and all the included packages' documentations.
+
+Special features:
+Tried excluding links that contains "wiki"
+
+
+**outdated version**
+Excluding "wiki" increases the average page size significantly
+without the constraint, 12000 pages takes up around 2 Gigabytes
+with the constraint, 4500 pages takes up 4.5 Gigabytes
+Thats about 6 times bigger for each page
