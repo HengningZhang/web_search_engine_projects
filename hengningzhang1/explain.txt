@@ -71,6 +71,10 @@ get_links() filter out links that are crawled / from a site that has been crawle
 
 
 Bugs:
+No count of HTTP errors and timeouts in log file. 
+It can be done by using ctrl+F in any editor though. It includes all the return codes.
+Parsing the log file would also work but I think that is not worth it since there are multiple kinds of errors.
+
 Sometimes froze without exception thrown.
 TL,DR: ThreadPoolExecutor doesn't raise exceptions. I admit I am new to multithreading and this is what I came to.
 
@@ -99,13 +103,3 @@ https://www.youtube.com/watch?v=IEEhzQoKtQU
 MIME types:
 https://stackoverflow.com/questions/12140460/how-to-skip-some-file-type-while-crawling-with-scrapy
 and all the included packages' documentations.
-
-Special features:
-Tried excluding links that contains "wiki"
-
-
-**outdated version**
-Excluding "wiki" increases the average page size significantly
-without the constraint, 12000 pages takes up around 2 Gigabytes
-with the constraint, 4500 pages takes up 4.5 Gigabytes
-Thats about 6 times bigger for each page

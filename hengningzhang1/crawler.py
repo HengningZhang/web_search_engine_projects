@@ -27,7 +27,7 @@ IGNORED_EXTENSIONS = [
 
     # video
     '3gp', 'asf', 'asx', 'avi', 'mov', 'mp4', 'mpg', 'qt', 'rm', 'swf', 'wmv',
-    'm4a', 'webm', #this one I found on wikipedia sites ,
+    'm4a', 'webm', #this one I found on wikipedia sites myself ,
 
     # other
     'css', 'pdf', 'doc', 'exe', 'bin', 'rss', 'zip', 'rar',
@@ -151,10 +151,12 @@ def get_links(page_content,url):
             if href[:4] != "http":
                 continue
         if parse_result.scheme=="":
-            link_to_add=urljoin(url,href)
+            link_to_add=urljoin(url,parse_result.path)
         else:
             link_to_add=href
-        if robot_parser.can_fetch("*",link_to_add):
+        #fixes
+        #using chrome user agent now 
+        if robot_parser.can_fetch("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36",link_to_add):
             linkset.add(link_to_add)
     return list(linkset)
 
@@ -251,7 +253,7 @@ class ScoredUrl:
         self.importance+=1
 
     def get_priority_score(self):
-        return 10/novelty_res[self.netloc]+self.importance
+        return 5/novelty_res[self.netloc]+self.importance
 
 def prioritized_crawler(query):
     google_results_list=google_search(query)
@@ -318,6 +320,7 @@ def prioritized_crawler(query):
                             if netloc not in crawled_site or crawled_site[netloc]<10:
                                 cur_scored_url=ScoredUrl(link)
                                 priority_queue.append(cur_scored_url)
+                                #map it in a hashmap so we can do the add_importance()
                                 scored_urls[link]=cur_scored_url
                                 seen.add(link)
                                 if netloc not in crawled_site:
@@ -338,21 +341,22 @@ def prioritized_crawler(query):
 
 # set the file path you want the log to be
 FILE_ADDRESS="bfs_crawler_result_1_1.txt"
-
+QUERY="flatbush"
 file = open(FILE_ADDRESS,"w",encoding='utf-8')
 
 # choose which one you want to run
 # left them in the try-except block because I want the total size and total time even if they fail
 # remember to comment out the one that is not meant to be executed this time
 
-# try:
-#     bfs_crawler("paris texas")
-# except :
-#     file.write("Total size:"+"{:.2f}".format(total_size[0]/1024)+"Mb")
-#     file.write("Total time used: "+"{:.2f}".format(time.time() - start_time)+" seconds")
 
+# page,index= crawl("https://bronx.news12.com/police-man-killed-11-year-old-among-3-others-injured-in-claremont-park-shooting",1)
+# for link in get_links(page,"https://bronx.news12.com/police-man-killed-11-year-old-among-3-others-injured-in-claremont-park-shooting"):
+#     print(link)
+# a=urlparse("https://bronx.news12.com/category/bronx-state-of-our-schools")
+# print(a)
 try:
-    prioritized_crawler("brooklyn union")
+    # bfs_crawler(QUERY)
+    prioritized_crawler(QUERY)
 except :
     file.write("Total size:"+"{:.2f}".format(total_size[0]/1024)+"Mb ")
     file.write("Total time used: "+"{:.2f}".format(time.time() - start_time)+" seconds")
