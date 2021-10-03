@@ -52,6 +52,9 @@ unordered_map<string, int[]> get_lexicon(string file_path){
     return lexicon;
 } 
 
+//read from file and write into intermediate postings
+void get_intermediate_postings(){}
+
 // Linked list object
 struct Node {
   int data;
@@ -61,46 +64,76 @@ struct Node {
 // Posting object to be used in comparison
 struct Posting{
     string term;
-    struct Node* head;
-    struct Node* tail;
+    struct Node* doc_id_head;
+    struct Node* doc_id_tail;
+    struct Node* frequency_head;
+    struct Node* frequency_tail;
     Posting(string input_term){
         term=input_term;
-        head=nullptr;
-        tail=nullptr;
+        doc_id_head=nullptr;
+        doc_id_tail=nullptr;
+        frequency_head=nullptr;
+        frequency_tail=nullptr;
     }
     // Free up memory after using!
     ~Posting(){
         Node* nextNode;
         delete &term;
-        while(head){
-            nextNode=head->next;
-            delete head;
-            head=nextNode;
+        while(doc_id_head){
+            nextNode=doc_id_head->next;
+            delete doc_id_head;
+            doc_id_head=nextNode;
         }
+        delete doc_id_tail;
+        while(frequency_head){
+            nextNode=frequency_head->next;
+            delete frequency_head;
+            frequency_head=nextNode;
+        }
+        delete frequency_tail;
     }
+    
     bool operator < (const Posting& other) const{
         if(term==other.term){
-            return head->data<other.head->data;
+            return doc_id_head->data<other.doc_id_head->data;
         }
         return (term < other.term);
     }
-    void push(int pos){
+
+    void push(int doc_id,int frequency){
         Node* newNode;
         newNode=new Node;
-        newNode->data=pos;
+        newNode->data=doc_id;
         newNode->next=nullptr;
-        if(!this->head){
-            this->head=newNode;
+        Node* newFrequency;
+        newFrequency=new Node;
+        newFrequency->data=frequency;
+        newFrequency->next=nullptr;
+        if(!this->doc_id_head){
+            this->doc_id_head=newNode;
         }
         else{
-            this->tail->next=newNode;
+            this->doc_id_tail->next=newNode;
         }
-        this->tail=newNode;
+        this->doc_id_tail=newNode;
+        if(!this->frequency_head){
+            this->frequency_head=newFrequency;
+        }
+        else{
+            this->frequency_tail->next=newFrequency;
+        }
+        this->frequency_tail=newFrequency;
     }
     void print(){
-        if(head){
-            cout<<term<<":";
-            Node* curNode=head;
+        if(doc_id_head){
+            cout<<term<<" DocIds:";
+            Node* curNode=doc_id_head;
+            while(curNode){
+                cout<<curNode->data<<"->";
+                curNode=curNode->next;
+            }
+            cout<<" Frequencies:";
+            curNode=frequency_head;
             while(curNode){
                 cout<<curNode->data<<"->";
                 curNode=curNode->next;
@@ -110,34 +143,37 @@ struct Posting{
     }
 };
 
-vector<Posting*> load_buffer(string filename){
-    ifstream reader(filename,ios::in);
-    if(!reader){
-        cout<<"Error in load_buffer."<<endl;
-    }
+Posting* merge_postings(Posting* p1, Posting* p2){
+    if(p1->term!=p2->term){
+            cout<<"Cannot add two postings of different terms"<<endl;
+        }
+        p1->doc_id_tail->next=p2->doc_id_head;
+        p1->doc_id_tail=p2->doc_id_tail;
+        p1->frequency_tail->next=p2->frequency_head;
+        p1->frequency_tail=p2->frequency_tail;
+        return p1;
+}
+
+vector<Posting*> load_buffer(ifstream& reader){
     string term;
-    
-    int pos;
+    int doc_id;
+    int frequency;
+    int count=0;
     vector<Posting*> buffer;
-    
-    while(reader>>term){
+    //limit the size of each buffer
+    while(count<200000 && reader>>term){
         cout<<term<<endl;
         Posting* newPosting;
         newPosting = new Posting(term);
         reader.seekg(1,ios::cur);
         while (isdigit(reader.peek())){
-            reader>>pos;
-            cout<<pos<<endl;
-            newPosting->push(pos);
+            reader>>doc_id>>frequency;
+            newPosting->push(doc_id,frequency);
             reader.seekg(1,ios::cur);
         }
-        newPosting->print();
-        cout<<"ending print"<<endl;
         buffer.push_back(newPosting);
-        cout<<"ending push"<<endl;
+        count++;
     }
-    cout<<"ending buffer"<<endl;
-    reader.close();
     return buffer;
 } 
 
@@ -171,9 +207,16 @@ int main() {
     //     cout << "Error occurred at reading time!" << endl;
     //     return 1;
     // }
-    vector<Posting*> buffer=load_buffer("intermediate.txt");
+    ifstream reader("intermediate.txt",ios::in);
+    if(!reader){
+        cout<<"Error in load_buffer."<<endl;
+    }
+    vector<Posting*> buffer=load_buffer(reader);
+    reader.close();
     for(int i=0;i<buffer.size();i++){
         buffer[i]->print();
     }
+    buffer[0]=merge_postings(buffer[0],buffer[4]);
+    buffer[0]->print();
     return 0;
 }
