@@ -4,6 +4,8 @@
 #include <vector>
 #include <cmath>
 #include <unordered_map>
+#include <algorithm>
+#include <functional>
 using namespace std;
 
 void write_compressed(ofstream& ofile, int num){
@@ -143,6 +145,10 @@ struct Posting{
     }
 };
 
+bool compare_postings(Posting* p1, Posting* p2){
+    return *p1<*p2;
+}
+
 Posting* merge_postings(Posting* p1, Posting* p2){
     if(p1->term!=p2->term){
             cout<<"Cannot add two postings of different terms"<<endl;
@@ -176,6 +182,23 @@ vector<Posting*> load_buffer(ifstream& reader){
     }
     return buffer;
 } 
+
+void sort_postings_vec(vector<Posting*>& postings){
+    sort(postings.begin(),postings.end(),compare_postings);
+}
+
+void write_uncompressed(ofstream& ofile,vector<Posting*>& buffer){
+    for(int i=0;i<buffer.size();i++){
+        ofile<<buffer[i]->term<<" ";
+        Node* curDoc=buffer[i]->doc_id_head;
+        Node* curFreq=buffer[i]->frequency_head;
+        while(curDoc){
+            ofile<<curDoc->data<<" "<<curFreq->data<<" ";
+            curDoc=curDoc->next;
+            curFreq=curFreq->next;
+        }
+    }
+}
 
 int main() {
     // ofstream wf("student.txt", ios::out | ios::binary);
@@ -216,7 +239,15 @@ int main() {
     for(int i=0;i<buffer.size();i++){
         buffer[i]->print();
     }
-    buffer[0]=merge_postings(buffer[0],buffer[4]);
-    buffer[0]->print();
+    sort_postings_vec(buffer);
+    for(int i=0;i<buffer.size();i++){
+        buffer[i]->print();
+    }
+    ofstream writer("temp0.txt",ios::out);
+    if(!writer){
+        cout<<"Error when trying to write."<<endl;
+    }
+    write_uncompressed(writer,buffer);
+    writer.close();
     return 0;
 }
