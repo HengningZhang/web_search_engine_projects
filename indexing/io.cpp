@@ -1,6 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <bitset>
+#include <string>
 #include <vector>
 #include <cmath>
 #include <unordered_map>
@@ -143,6 +144,17 @@ struct Posting{
             cout<<endl;
         }
     }
+    void write_intermediate(ofstream& ofs){
+        Node* curDoc;
+        Node* curFreq;
+        curDoc=doc_id_head;
+        curFreq=frequency_head;
+        while(curDoc){
+            ofs<<curDoc->data<<" "<<curFreq->data<<" ";
+            curDoc=curDoc->next;
+            curFreq=curFreq->next;
+        }
+    }
 };
 
 bool compare_postings(Posting* p1, Posting* p2){
@@ -168,7 +180,6 @@ vector<Posting*> load_buffer(ifstream& reader){
     vector<Posting*> buffer;
     //limit the size of each buffer
     while(count<200000 && reader>>term){
-        cout<<term<<endl;
         Posting* newPosting;
         newPosting = new Posting(term);
         reader.seekg(1,ios::cur);
@@ -198,6 +209,91 @@ void write_uncompressed(ofstream& ofile,vector<Posting*>& buffer){
             curFreq=curFreq->next;
         }
     }
+}
+
+struct HeapNode{
+    struct Posting* posting;
+    int origin;
+    int pos;
+};
+
+bool compare_heap_node(HeapNode* p1, HeapNode* p2){
+    return !compare_postings(p1->posting,p2->posting);
+}
+
+HeapNode* get_next_heap_node(vector<vector<Posting*>> &buffers,int origin,int pos){
+    if(pos+1>=buffers[origin].size()){
+        return nullptr;
+    }
+    HeapNode* newNode;
+    newNode=new HeapNode;
+    cout<<"getting next heap node:"<<origin<<" "<<pos+1<<endl;
+    buffers[origin][pos+1]->print();
+    newNode->posting=buffers[origin][pos+1];
+    newNode->origin=origin;
+    newNode->pos=pos+1;
+    return newNode;
+}
+void up_to_k_way_merge(int start, int k, int round,int outputID){
+    vector<ifstream*> files;
+    vector<HeapNode*> heap;
+    vector<vector<Posting*>> buffers;
+    string fileName;
+    for(int i=0;i<k;i++){
+        fileName="temp"+to_string(i+start)+"_round"+to_string(round)+".txt";
+        cout<<"loading "<<fileName<<endl;
+        ifstream ifs(fileName,ios::in);
+        if(!ifs){
+            cout<<"unable to open file in merging"<<endl;
+        }
+        buffers.push_back(load_buffer(ifs));
+        heap.push_back(get_next_heap_node(buffers,i,-1));
+        files.push_back(&ifs);
+    }
+    string curTerm,prevTerm;
+    HeapNode* curPosting;
+    HeapNode* nextPosting;
+    fileName="temp"+to_string(outputID)+"_round"+to_string(round+1)+".txt";
+    ofstream ofs(fileName,ios::out);
+    int origin,pos;
+    make_heap(heap.begin(),heap.end(),compare_heap_node);
+    prevTerm="";
+    while(!heap.empty()){
+        cout<<"current heap content"<<endl;
+        heap[0]->posting->print();
+        heap[1]->posting->print();
+        cout<<compare_heap_node(heap[0],heap[1])<<endl;
+        cout<<"heap front:"<<endl;
+        heap.front()->posting->print();
+        curPosting=heap.front();
+        
+        cout<<"processing"<<endl;
+        curPosting->posting->print();
+        curTerm=curPosting->posting->term;
+        if(prevTerm.compare(curTerm)!=0){
+            prevTerm=curTerm;
+            ofs<<curTerm<<" ";
+        }
+        //write doc freq doc freq... into intermediate files
+        curPosting->posting->write_intermediate(ofs);
+        origin=curPosting->origin;
+        pos=curPosting->pos;
+        nextPosting=get_next_heap_node(buffers,origin,pos);
+        
+        pop_heap(heap.begin(),heap.end(),compare_heap_node);
+        heap.pop_back();
+        if(!nextPosting){
+            //exahusted buffer, load new buffer in there!
+            buffers[origin]=load_buffer(*files[origin]);
+            nextPosting=get_next_heap_node(buffers,origin,pos);
+        }
+        if(nextPosting){
+            heap.push_back(nextPosting);
+            push_heap(heap.begin(),heap.end(),compare_heap_node);
+        }
+    }
+    ofs<<endl;
+    ofs.close();
 }
 
 int main() {
@@ -230,24 +326,27 @@ int main() {
     //     cout << "Error occurred at reading time!" << endl;
     //     return 1;
     // }
-    ifstream reader("intermediate.txt",ios::in);
-    if(!reader){
-        cout<<"Error in load_buffer."<<endl;
-    }
-    vector<Posting*> buffer=load_buffer(reader);
-    reader.close();
-    for(int i=0;i<buffer.size();i++){
-        buffer[i]->print();
-    }
-    sort_postings_vec(buffer);
-    for(int i=0;i<buffer.size();i++){
-        buffer[i]->print();
-    }
-    ofstream writer("temp0.txt",ios::out);
-    if(!writer){
-        cout<<"Error when trying to write."<<endl;
-    }
-    write_uncompressed(writer,buffer);
-    writer.close();
+    // ifstream reader("intermediate.txt",ios::in);
+    // if(!reader){
+    //     cout<<"Error in load_buffer."<<endl;
+    // }
+    // vector<Posting*> buffer=load_buffer(reader);
+    // vector<Posting*> buffer2=load_buffer(reader);
+    // reader.close();
+    // cout<<"buffer2 size:"<<buffer2.size()<<endl;
+    // for(int i=0;i<buffer.size();i++){
+    //     buffer[i]->print();
+    // }
+    // sort_postings_vec(buffer);
+    // for(int i=0;i<buffer.size();i++){
+    //     buffer[i]->print();
+    // }
+    // ofstream writer("temp0.txt",ios::out);
+    // if(!writer){
+    //     cout<<"Error when trying to write."<<endl;
+    // }
+    // write_uncompressed(writer,buffer);
+    // writer.close();
+    up_to_k_way_merge(0,2,0,0);
     return 0;
 }
