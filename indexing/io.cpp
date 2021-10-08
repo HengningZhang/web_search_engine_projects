@@ -172,14 +172,14 @@ Posting* merge_postings(Posting* p1, Posting* p2){
         return p1;
 }
 
-vector<Posting*> load_buffer(ifstream& reader){
+void load_buffer(ifstream& reader, vector<Posting*>& buffer){
     string term;
     int doc_id;
     int frequency;
     int count=0;
-    vector<Posting*> buffer;
     //limit the size of each buffer
-    while(count<200000 && reader>>term){
+    cout<<"load buffer called!"<<endl;
+    while(count<2 && reader>>term){
         Posting* newPosting;
         newPosting = new Posting(term);
         reader.seekg(1,ios::cur);
@@ -189,9 +189,9 @@ vector<Posting*> load_buffer(ifstream& reader){
             reader.seekg(1,ios::cur);
         }
         buffer.push_back(newPosting);
+        newPosting->print();
         count++;
     }
-    return buffer;
 } 
 
 void sort_postings_vec(vector<Posting*>& postings){
@@ -237,19 +237,20 @@ HeapNode* get_next_heap_node(vector<vector<Posting*>> &buffers,int origin,int po
 void up_to_k_way_merge(int start, int k, int round,int outputID){
     vector<ifstream*> files;
     vector<HeapNode*> heap;
-    vector<vector<Posting*>> buffers;
+    vector<vector<Posting*>> buffers(k);
     string fileName;
     for(int i=0;i<k;i++){
         fileName="temp"+to_string(i+start)+"_round"+to_string(round)+".txt";
         cout<<"loading "<<fileName<<endl;
-        ifstream ifs(fileName,ios::in);
+        ifstream* ifs= new ifstream(fileName,ios::in);
         if(!ifs){
             cout<<"unable to open file in merging"<<endl;
         }
-        buffers.push_back(load_buffer(ifs));
+        load_buffer(*ifs,buffers[i]);
         heap.push_back(get_next_heap_node(buffers,i,-1));
-        files.push_back(&ifs);
+        files.push_back(ifs);
     }
+
     string curTerm,prevTerm;
     HeapNode* curPosting;
     HeapNode* nextPosting;
@@ -262,7 +263,6 @@ void up_to_k_way_merge(int start, int k, int round,int outputID){
         cout<<"current heap content"<<endl;
         heap[0]->posting->print();
         heap[1]->posting->print();
-        cout<<compare_heap_node(heap[0],heap[1])<<endl;
         cout<<"heap front:"<<endl;
         heap.front()->posting->print();
         curPosting=heap.front();
@@ -283,15 +283,22 @@ void up_to_k_way_merge(int start, int k, int round,int outputID){
         pop_heap(heap.begin(),heap.end(),compare_heap_node);
         heap.pop_back();
         if(!nextPosting){
+            cout<<"buffer "<<curPosting->origin<<" is exhausted"<<endl;
             //exahusted buffer, load new buffer in there!
-            buffers[origin]=load_buffer(*files[origin]);
-            nextPosting=get_next_heap_node(buffers,origin,pos);
+            buffers[origin].clear();
+            cout<<"cleared buffer size"<<buffers[origin].size()<<endl;
+            load_buffer(*files[origin],buffers[origin]);
+            cout<<"loaded buffer size"<<buffers[origin].size()<<endl;
+
+            nextPosting=get_next_heap_node(buffers,origin,0);
+            //reset the pos to 0 so read from the start of the newly added buffer!
         }
         if(nextPosting){
             heap.push_back(nextPosting);
             push_heap(heap.begin(),heap.end(),compare_heap_node);
         }
     }
+    cout<<"end of merging!"<<endl;
     ofs<<endl;
     ofs.close();
 }
