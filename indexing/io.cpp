@@ -7,7 +7,11 @@
 #include <unordered_map>
 #include <algorithm>
 #include <functional>
+#include <regex>
+#include <sstream>
 using namespace std;
+
+
 
 void write_compressed(ofstream& ofile, int num){
 	vector<uint8_t> result;
@@ -81,19 +85,18 @@ struct Posting{
     // Free up memory after using!
     ~Posting(){
         Node* nextNode;
-        delete &term;
-        while(doc_id_head){
-            nextNode=doc_id_head->next;
-            delete doc_id_head;
-            doc_id_head=nextNode;
+        Node* curNode=doc_id_head;
+        while(curNode!=0){
+            nextNode=curNode->next;
+            delete curNode;
+            curNode=nextNode;
         }
-        delete doc_id_tail;
-        while(frequency_head){
-            nextNode=frequency_head->next;
-            delete frequency_head;
-            frequency_head=nextNode;
+        curNode=frequency_head;
+        while(curNode!=0){
+            nextNode=curNode->next;
+            delete curNode;
+            curNode=nextNode;
         }
-        delete frequency_tail;
     }
     
     bool operator < (const Posting& other) const{
@@ -172,7 +175,58 @@ Posting* merge_postings(Posting* p1, Posting* p2){
         return p1;
 }
 
-void load_buffer(ifstream& reader, vector<Posting*>& buffer){
+void load_parse_buffer(ifstream& ifs, vector<Posting*>& buffer, ofstream& url_map, int& docID){
+    string s;
+    regex rgx("[a-zA-Z]+");
+    smatch match;
+    bool flag=false;
+    bool get_url=false;
+    Posting* posting;
+    int count=0;
+    unordered_map<string,int> map;
+    while(count<100000){
+        while(ifs>>s){
+            if(s=="<TEXT>"){
+                flag=true;
+                get_url=true;
+                continue;
+            }
+            if(s=="</TEXT>"){
+                for (auto i : map){
+                    posting = new Posting(i.first);
+                    posting->push(docID,i.second);
+                    buffer.push_back(posting);
+                }
+                map.clear();
+                url_map<<endl;
+                docID++;
+                flag=false;
+            }
+            if(!flag){
+                break;
+            }
+            if(get_url){
+                url_map<<docID<<" "<<s;
+                get_url=false;
+                continue;
+            }
+            while(regex_search(s, match, rgx)){
+                if(map.find(match.str())==map.end()){
+                    map[match.str()]=1;
+                }else{
+                    map[match.str()]++;
+                }
+                s=match.suffix();
+                count++;
+            }
+        }
+            
+    }
+}
+
+
+
+void load_merge_buffer(ifstream& reader, vector<Posting*>& buffer){
     string term;
     int doc_id;
     int frequency;
@@ -198,16 +252,20 @@ void sort_postings_vec(vector<Posting*>& postings){
     sort(postings.begin(),postings.end(),compare_postings);
 }
 
-void write_uncompressed(ofstream& ofile,vector<Posting*>& buffer){
+void write_uncompressed(stringstream& ss,vector<Posting*>& buffer){
+    Node* curDoc;
+    Node* curFreq;
     for(int i=0;i<buffer.size();i++){
-        ofile<<buffer[i]->term<<" ";
-        Node* curDoc=buffer[i]->doc_id_head;
-        Node* curFreq=buffer[i]->frequency_head;
+        ss<<buffer[i]->term<<" ";
+        curDoc=buffer[i]->doc_id_head;
+        curFreq=buffer[i]->frequency_head;
         while(curDoc){
-            ofile<<curDoc->data<<" "<<curFreq->data<<" ";
+            ss<<curDoc->data<<" "<<curFreq->data<<" ";
             curDoc=curDoc->next;
             curFreq=curFreq->next;
         }
+        delete curDoc;
+        delete curFreq;
     }
 }
 
@@ -246,7 +304,7 @@ void up_to_k_way_merge(int start, int k, int round,int outputID){
         if(!ifs){
             cout<<"unable to open file in merging"<<endl;
         }
-        load_buffer(*ifs,buffers[i]);
+        load_merge_buffer(*ifs,buffers[i]);
         heap.push_back(get_next_heap_node(buffers,i,-1));
         files.push_back(ifs);
     }
@@ -260,9 +318,6 @@ void up_to_k_way_merge(int start, int k, int round,int outputID){
     make_heap(heap.begin(),heap.end(),compare_heap_node);
     prevTerm="";
     while(!heap.empty()){
-        cout<<"current heap content"<<endl;
-        heap[0]->posting->print();
-        heap[1]->posting->print();
         cout<<"heap front:"<<endl;
         heap.front()->posting->print();
         curPosting=heap.front();
@@ -283,13 +338,9 @@ void up_to_k_way_merge(int start, int k, int round,int outputID){
         pop_heap(heap.begin(),heap.end(),compare_heap_node);
         heap.pop_back();
         if(!nextPosting){
-            cout<<"buffer "<<curPosting->origin<<" is exhausted"<<endl;
             //exahusted buffer, load new buffer in there!
             buffers[origin].clear();
-            cout<<"cleared buffer size"<<buffers[origin].size()<<endl;
-            load_buffer(*files[origin],buffers[origin]);
-            cout<<"loaded buffer size"<<buffers[origin].size()<<endl;
-
+            load_merge_buffer(*files[origin],buffers[origin]);
             nextPosting=get_next_heap_node(buffers,origin,0);
             //reset the pos to 0 so read from the start of the newly added buffer!
         }
@@ -303,57 +354,49 @@ void up_to_k_way_merge(int start, int k, int round,int outputID){
     ofs.close();
 }
 
+void write_buffer_to_file(stringstream& ss, ofstream& ofs){
+    ofs << ss.rdbuf();
+}
+
+int parse_all(string file){
+    int docID=0;
+    int fileID=-1;
+    ifstream ifs(file,ios::in);
+    std::stringstream ss;
+    if(!ifs){
+            cout<<"unable to open input file in parse all."<<endl;
+            return 0;
+        }
+    vector<Posting*> buffer;
+    //dictionary
+    ofstream ofs("docMap.txt",ios::out);
+    //interm posting
+    ofstream ofile;
+    load_parse_buffer(ifs,buffer,ofs,docID);
+    while(buffer.size()!=0){
+        sort_postings_vec(buffer);
+        fileID++;
+        ofile.open("temp"+to_string(fileID)+"_round0.txt",ios::out);
+        if(!ofile){
+            cout<<"unable to open output file in parse all."<<endl;
+            break;
+        }
+        write_uncompressed(ss,buffer);
+        write_buffer_to_file(ss,ofile);
+        ofile.close();
+        for(int j = 0, i = buffer.size(); j < i ; j++){
+            Posting* ptr=buffer.at(j);
+            delete ptr;
+        }
+        buffer.clear();
+        load_parse_buffer(ifs,buffer,ofs,docID);
+    }
+    return fileID;
+}
+
 int main() {
-    // ofstream wf("student.txt", ios::out | ios::binary);
-    // if(!wf) {
-    //     cout << "Cannot open file!" << endl;
-    //     return 1;
-    // }
-    // write_compressed(wf,5);
-    // write_compressed(wf,100);
-    // write_compressed(wf,56710565);
-    // wf.close();
-
-    // if(!wf.good()) {
-    //     cout << "Error occurred at writing time!" << endl;
-    //     return 1;
-    // }
-
-    // ifstream rf("student.txt", ios::out | ios::binary);
-    // if(!rf) {
-    //     cout << "Cannot open file!" << endl;
-    //     return 1;
-    // }
-
-    // rf.seekg(1);
-    // cout<<read_next(rf)<<endl;
-    // rf.close();
-
-    // if(!rf.good()) {
-    //     cout << "Error occurred at reading time!" << endl;
-    //     return 1;
-    // }
-    // ifstream reader("intermediate.txt",ios::in);
-    // if(!reader){
-    //     cout<<"Error in load_buffer."<<endl;
-    // }
-    // vector<Posting*> buffer=load_buffer(reader);
-    // vector<Posting*> buffer2=load_buffer(reader);
-    // reader.close();
-    // cout<<"buffer2 size:"<<buffer2.size()<<endl;
-    // for(int i=0;i<buffer.size();i++){
-    //     buffer[i]->print();
-    // }
-    // sort_postings_vec(buffer);
-    // for(int i=0;i<buffer.size();i++){
-    //     buffer[i]->print();
-    // }
-    // ofstream writer("temp0.txt",ios::out);
-    // if(!writer){
-    //     cout<<"Error when trying to write."<<endl;
-    // }
-    // write_uncompressed(writer,buffer);
-    // writer.close();
-    up_to_k_way_merge(0,2,0,0);
+    
+    // up_to_k_way_merge(0,16,0,0);
+    parse_all("fulldocs-new.trec");
     return 0;
 }
