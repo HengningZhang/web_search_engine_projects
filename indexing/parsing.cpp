@@ -1,18 +1,13 @@
 #include <iostream>
 #include <fstream>
-#include <bitset>
 #include <string>
 #include <vector>
-#include <cmath>
-#include <unordered_map>
 #include <algorithm>
-#include <functional>
-#include <sstream>
 #include <chrono>
 
-// sort -S 50% --parallel=4 -k1,1 -s intermediate_postings.txt > sorted_postings.txt
 using namespace std;
 
+//display elapsed time
 void display_elapsed_time(chrono::steady_clock::time_point start){
     chrono::steady_clock::time_point end = chrono::steady_clock::now();
     cout << "Elapsed time: "
@@ -20,25 +15,9 @@ void display_elapsed_time(chrono::steady_clock::time_point start){
         << " ms" << endl;
 }
 
-void parse_posting(string& posting, string& term, string& leftover){
-    term.clear();
-    leftover.clear();
-    bool flag=false;
-    for(char c:posting){
-        if(!flag && c==' '){
-            flag=true;
-            continue;
-        }
-        if(!flag){
-            term.push_back(c);
-        }
-        if(flag){
-            leftover.push_back(c);
-        }
-    }
-}
-
+//load vector of terms into output buffer
 void load_terms_into_output_buffer(string& buffer, vector<string>& terms, int docID){
+    //sort it so that it is easier to count the frequency of each word in one file
     sort(terms.begin(),terms.end());
     string curTerm="";
     int count=0;
@@ -46,44 +25,49 @@ void load_terms_into_output_buffer(string& buffer, vector<string>& terms, int do
         if(curTerm.compare("")==0){
             count=1;
             curTerm=term;
-            if(term.compare("")==0){
-                cout<<"caught the rat!"<<endl;
-            }
         }
+        //count the current term
         else if(term.compare(curTerm)==0){
             count+=1;
         }
+        //if get a different one, write the previous one and its count into buffer
         else{
-            if(count==0){
-                cout<<"encountered a zero!"<<endl;
-            }
             buffer.append(curTerm+" "+to_string(docID)+" "+to_string(count)+"\n");
             count=1;
             curTerm=term;
         }
         
     }
+    //write the last one
+    //don't write anything into buffer if word is empty string
     if(curTerm.compare("")!=0){
         buffer.append(curTerm+" "+to_string(docID)+" "+to_string(count)+"\n");
     }
-    
     terms.clear();
 }
 
 
 void parse_file(){
     chrono::steady_clock::time_point start_time = chrono::steady_clock::now();
+    //input buffer size roughly 2GB
     const int BUFFER_SIZE = 1024*1024*2000;
     vector<char> buffer (BUFFER_SIZE + 1, 0);
     vector<string> posting_buffer;
+    //posting output buffer
     string output_buffer;
+    //document map output buffer
     string doc_buffer;
     ofstream intermediatePostingFile;
     ofstream docMap;
 	ifstream ifile("fulldocs-new.trec", ios::binary);
+    //I know it should probably be named term
+    //but naming it this helps me think:)
     string curword;
+    //used to decompose word separated by symbols or non ASCII stuff
     string subword;
+    //store the words in one doc
     vector<string> words;
+    //take note of current document id
     int docID=0;
     vector<string> urls;
     bool flag=false;
@@ -96,25 +80,34 @@ void parse_file(){
         streamsize s = ((ifile) ? BUFFER_SIZE : ifile.gcount());
         buffer[s] = 0;
         for(int i=0;i<s;i++){
+            //my own parsing
+            //if not blankspace or changing line
+            //read char into curword
             if(buffer[i]!=' ' && buffer[i]!='\n'){
                 curword.push_back(buffer[i]);
                 continue;
-                
             }
             if(!curword.empty()){
+                //at a blankspace or changing line
                 if(curword.compare("<TEXT>")==0){
+                    //if starting of the document
+                    //now every term counts
                     flag=true;
+                    //ready to get url
                     get_url=true;
                 }
                 else if(!flag){
+                    //not in document, don't count anything
                     curword.clear();
                 }
                 else if(get_url){
+                    //at the start of document, read url in
                     doc_buffer.append(to_string(docID)+" "+curword+"\n");
                     if(doc_buffer.size()>1024*1024*1024){
                         docMap.write(doc_buffer.c_str(),doc_buffer.size());
                         doc_buffer.clear();
                     }
+                    //already read the url, not reading it anymore in this document
                     get_url=false;
                 }
                 else if(curword.compare("</TEXT>")==0){
@@ -129,6 +122,7 @@ void parse_file(){
                     flag=false;
                 }
                 else{
+                    //decompose the curword if there is weird characters separating it to multiple subwords
                     for(char c:curword){
                         if(!isalpha(c)&&!isdigit(c)){
                             if(!subword.empty()){

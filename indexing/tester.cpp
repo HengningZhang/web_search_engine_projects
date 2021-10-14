@@ -1,64 +1,15 @@
 #include <iostream>
 #include <fstream>
-#include <bitset>
-#include <string>
 #include <vector>
-#include <cmath>
-#include <unordered_map>
-#include <algorithm>
-#include <functional>
-#include <regex>
-#include <sstream>
 #include <chrono>
 
 
 using namespace std;
 
-void write_compressed(ofstream& ofile, long long num){
-	vector<uint8_t> result;
-	uint8_t b;
-	while(num >= 128){
-		int a = num % 128;
-		bitset<8> byte(a);
-		byte.flip(7);
-		num = (num - a) / 128;
-		b = byte.to_ulong();
-		result.push_back(b);
-	}
-	int a = num % 128;
-	bitset<8> byte(a);
-	b = byte.to_ulong();
-	result.push_back(b);
-	for(vector<uint8_t>::iterator it = result.begin(); it != result.end(); it++){
-		ofile.write(reinterpret_cast<const char*>(&(*it)), 1);
-	}
-}
-
-
-//write an integer
-void write_byte(unsigned char buffer[], int& array_pos, int num){
-    buffer[array_pos]=(unsigned char)num;
-    array_pos++;
-}
-
 int read_byte(unsigned char buffer[], int& array_pos){
     int result=(int)buffer[array_pos];
     array_pos++;
     return result;
-}
-
-int varbyte_encode(unsigned char buffer[], int& array_pos, int num, ofstream& file, int size_limit){
-    int size;
-    while(num>127){
-        if(!array_pos<size_limit){
-            file.write((char*) buffer,array_pos);
-            array_pos=0;
-        }
-        write_byte(buffer,array_pos,num&127);
-        num=num>>7;
-    }
-    write_byte(buffer,array_pos,128+num);
-    return size;
 }
 
 int varbyte_decode(unsigned char buffer[], int& array_pos){
@@ -80,10 +31,9 @@ void display_elapsed_time(chrono::steady_clock::time_point start){
 
 
 int main(){
+    string QUERY_TERM="ability";
     const int BUFFER_SIZE = 1024*1024;
     vector<char> buffer (BUFFER_SIZE + 1, 0);
-    string lexicon_buffer;
-    string output_buffer;
     ifstream lexicon;
     ofstream testing;
     lexicon.open("lexicon.txt", ios::in);
@@ -91,9 +41,9 @@ int main(){
     string s;
     long long pos;
     while(lexicon>>s){
-        if(s=="accepted"){
+        if(s==QUERY_TERM){
             lexicon>>pos;
-            cout<<pos<<endl;
+            cout<<"info for "<<QUERY_TERM<<" starts from position "<<pos<<" in inverted index"<<endl;
             break;
         }
         lexicon>>pos;
