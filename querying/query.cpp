@@ -6,7 +6,7 @@
 #include <sstream>
 #include <unordered_map>
 #include <math.h>
-#include <mysql/jdbc.h>
+#include <algorithm>
 using namespace std;
 
 const string SERVER = "wse-document-do-user-10132967-0.b.db.ondigitalocean.com";
@@ -14,7 +14,6 @@ const string USERNAME = "doadmin";
 const string PASSWORD = "UsuY0FZyThSgOpJb";
 const string DB="defaultdb";
 const string LEXICON_FILE="lexicon.txt";
-chrono::steady_clock::time_point start_time = chrono::steady_clock::now();
 const string INDEX_FILE="inverted_index.txt";
 const string DOCMAP_FILE="docMap.txt";
 const string DOC_LOOKUP_FILE="doc_lookup.txt";
@@ -87,6 +86,7 @@ vector<pair<long long,int>> load_docLookup(string doc_lookup_file){
 }
 
 struct ListPointer{
+    string lpterm;
     ifstream index;
     long long pos;
     int block_size=0;
@@ -94,15 +94,16 @@ struct ListPointer{
     int last_in_block;
     int doc_id=-1;
     //index to specify where we are in the current block's decode buffer
-    int array_pos;
+    int array_pos=0;
     vector<int> block;
     int current_block=-1;
     int block_count;
     unsigned char buffer[320];
-    int next_pos;
+    long long next_pos;
     pair<int,int> current_posting;
 
-    ListPointer(long long lexiconPos){
+    ListPointer(long long lexiconPos,string term){
+        lpterm=term;
         cout<<"initializing list pointer"<<endl;
         pos=lexiconPos;
         cout<<"pos:"<<pos<<endl;
@@ -115,10 +116,9 @@ struct ListPointer{
         if(block_count%64==0){
             block_count=block_count-1;
         }
-        cout<<"docID count: "<<docID_count<<" block count: "<<block_count<<endl;
+        // cout<<"docID count: "<<docID_count<<" block count: "<<block_count<<endl;
         next_pos=pos+array_pos;
-        // read 16 bytes because we need at most 4 numbers at the start of each posting
-        // # of files that this term, last docID in this block, size of docID block, size of frequency block
+        cout<<"arraypos: "<<array_pos<<endl;
         getBlockInfo();
         decompressBlock();
     }
@@ -129,20 +129,29 @@ struct ListPointer{
         block_size=0;
         pos=next_pos;
         index.seekg(pos);
+        cout<<"pos: "<<pos<<endl;
         array_pos=0;
         current_block++;
-        index.read((char*)buffer,16);
+        index.read((char*)buffer,20);
+        for(int i=0;i<3;i++){
+            cout<<varbyte_decode(buffer,array_pos)<<endl;
+        }
+        array_pos=0;
         last_in_block=varbyte_decode(buffer,array_pos);
         // determine how much to decompress
         block_size=block_size+varbyte_decode(buffer,array_pos);
         block_size=block_size+varbyte_decode(buffer,array_pos);
         // take note of the start of next block
         next_pos=pos+array_pos+block_size;
+        cout<<"block count:"<<block_count<<" current block:"<<current_block<<" docid count:"<<docID_count<<" last in block: "<<last_in_block<<" blocksize: "<<block_size<<endl;
     }
 
     void decompressBlock(){
         cout<<"decompressing"<<endl;
-        index.seekg(pos+array_pos);
+        cout<<"pos: "<<pos+array_pos<<endl;
+        pos=pos+array_pos;
+        index.seekg(pos);
+        cout<<"block_size: "<<block_size<<endl;
         index.read((char*)buffer,block_size);
         int i=0;
         array_pos=0;
@@ -153,13 +162,18 @@ struct ListPointer{
 };
 
 pair<int,int> nextGEQ(ListPointer* lp, int k){
-    cout<<"querying k= "<<k<<endl;
-    if(lp->last_in_block<k){
+    cout<<"querying "<<lp->lpterm<<" current: "<<lp->current_posting.first<<" k= "<<k<<endl;
+    if(lp->last_in_block<k & (lp->current_block)>=(lp->block_count)){
+        lp->current_posting=make_pair(MAXDOCID+1,0);
+        return lp->current_posting;
+    }
+    if(lp->last_in_block<k & (lp->current_block)<(lp->block_count)){
         cout<<"last in block = "<<lp->last_in_block<<endl;
-        while(lp->current_block<=lp->block_count){
+        while(lp->current_block<=lp->block_count & (lp->current_block)<(lp->block_count)){
             cout<<"in while"<<endl;
+            
             lp->getBlockInfo();
-            cout<<"new block last in block: "<<lp->last_in_block<<endl;
+            // cout<<"new block last in block: "<<lp->last_in_block<<endl;
             if(lp->last_in_block>=k){
                 lp->decompressBlock();
                 break;
@@ -167,13 +181,8 @@ pair<int,int> nextGEQ(ListPointer* lp, int k){
         }
         
     }
-    cout<<"lp->current_block: "<<lp->current_block<<" lp->block_count:"<<lp->block_count<<endl;
-    if(lp->current_block>lp->block_count){
-        lp->current_posting=make_pair(MAXDOCID+1,0);
-        return lp->current_posting;
-    }
+    // cout<<"lp->current_block: "<<lp->current_block<<" lp->block_count:"<<lp->block_count<<endl;
     for(int i=0;i<lp->block.size()/2;i++){
-        cout<<lp->block[i]<<endl;
         if(lp->block[i]>=k){
             lp->current_posting=make_pair(lp->block[i],lp->block[i+lp->block.size()/2]);
             return lp->current_posting;
@@ -183,32 +192,26 @@ pair<int,int> nextGEQ(ListPointer* lp, int k){
 }
 
 bool comparison(pair<int,int> p1, pair<int,int> p2){
-    if(p1.second<p2.second){
-        return false;
-    }
-    return true;
+    return p1.second<p2.second;
 }
 
 bool normal_comparison(pair<int,int> p1, pair<int,int> p2){
-    if(p1.second<p2.second){
-        return true;
-    }
-    return true;
+    return p1.second>p2.second;
 }
 
 class FileSys{
     public:
-        FileSys(){
+        FileSys(string lexicon_file){
             //load lexicon and docMap
-            lexicon=load_lexicon(LEXICON_FILE);
+            lexicon=load_lexicon(lexicon_file);
             docMap=load_docMap(DOCMAP_FILE);
             doc_lookup=load_docLookup(DOC_LOOKUP_FILE);
         }
         ListPointer* open_term(string term){
-            lp=new ListPointer(lexicon[term]);
+            lp=new ListPointer(lexicon[term],term);
             return lp;
         }
-        vector<pair<int,int>> conjunctive(vector<string> query,int k){
+        vector<pair<long long,int>> conjunctive_query(vector<string> query,int k){
             vector<ListPointer*> lps;
             for(int i=0; i<query.size();i++){
                 lps.push_back(open_term(query[i]));
@@ -216,7 +219,7 @@ class FileSys{
             int docID=0;
             int d;
             int impact_score=0;
-            vector<pair<int,int>> result;
+            vector<pair<long long,int>> result;
             make_heap(result.begin(),result.end(),comparison);
             while(docID<=MAXDOCID){
                 docID=nextGEQ(lps[0],docID).first;
@@ -230,20 +233,23 @@ class FileSys{
                         impact_score+=impactScore(lps[i]);
                     }
                     if(result.size()<k){
-                        result.push_back(make_pair(docID,impact_score));
+                        result.push_back(make_pair(doc_lookup[docID].first,impact_score));
                         std::push_heap (result.begin(),result.end());
                     }
                     else{
                         if(result.front().second<impact_score){
                             pop_heap(result.begin(),result.end());
                             result.pop_back();
-                            result.push_back(make_pair(docID,impact_score));
+                            result.push_back(make_pair(doc_lookup[docID].first,impact_score));
                             std::push_heap (result.begin(),result.end());
                         }
                     }
                     docID++;
                 }
 
+            }
+            for(int i=0; i<query.size();i++){
+                lps[i]->index.close();
             }
             sort_heap(result.begin(),result.end(),normal_comparison);
             return result;
@@ -271,17 +277,19 @@ class FileSys{
 };
 
 int main(){
+    chrono::steady_clock::time_point start_time = chrono::steady_clock::now();
     string input;
     string term;
 
-    // unordered_map<string,long long> lexicon=load_lexicon(LEXICON_FILE);
-    // FileSys filesys();
-    // cout<<"filesys initialized"<<endl;
-    // display_elapsed_time(start_time);
-    // ListPointer* example;
+    FileSys filesys("lexicon.txt");
+    cout<<"filesys initialized"<<endl;
+    display_elapsed_time(start_time);
+    ListPointer* example;
     // example=filesys.open_term("accepted");
     // cout<<"opened term"<<endl;
-    // display_elapsed_time(start_time);
+    display_elapsed_time(start_time);
+    
+    
     // pair<int,int> result;
     // result=nextGEQ(example,1);
     // cout<<"result of nextGEQ(1) is "<<result.first<<" "<<result.second<<endl;
@@ -291,40 +299,45 @@ int main(){
     // display_elapsed_time(start_time);
     // result=nextGEQ(example,4548);
     // cout<<"result of nextGEQ(458) is "<<result.first<<" "<<result.second<<endl;
-    // display_elapsed_time(start_time);
-    // cout<<"result of impactscore(lp) is "<<impactScore(example)<<endl;
-    // vector<vector<string>> query_terms;
-    // vector<string> term_group;
+    
     // cout<<"loaded lexicon"<<endl;
     // display_elapsed_time(start_time);
-    // cout<<lexicon["accepted"]<<endl;
     // query processer 
-    // while(true){
-    //     cout<<"input query:"<<endl;
-    //     getline(cin,input);
-    //     istringstream query(input);
-    //     while(query>>term){
-    //         if(term=="quit"){
-    //             return 0;
-    //         }
-    //         else if(term=="OR"){
-    //             query_terms.push_back(term_group);
-    //             term_group.clear();
-    //         }
-    //         else if(term!="AND"){
-    //             term_group.push_back(term);
-    //         }
-    //     }
-    //     cout<<"read!"<<endl;
-    //     query_terms.push_back(term_group);
-    //     term_group.clear();
-    //     for(int i=0;i<query_terms.size();i++){
-    //         cout<<i;
-    //         for(int j=0;j<query_terms[i].size();j++){
-    //             cout<<" "<<query_terms[i][j];
-    //         }
-    //         cout<<endl;
-    //     }
-    //     query_terms.clear();
-    // }
+    vector<string> query_terms;
+
+    while(true){
+        cout<<"input query:"<<endl;
+        getline(cin,input);
+        istringstream query(input);
+        bool conjunctive=true;
+        while(query>>term){
+            if(term=="quit"){
+                return 0;
+            }
+            else if(term=="OR"){
+                conjunctive=false;
+            }
+            else if(term!="AND"){
+                query_terms.push_back(term);
+            }
+        }
+        cout<<"read!"<<endl;
+        string isconjunctive=conjunctive ? "conjunctive":"disjunctive";
+        cout<<"running "<< isconjunctive <<" query on: ";
+        for(int i=0;i<query_terms.size();i++){
+            cout<<query_terms[i]<<" ";   
+        }
+        cout<<endl;
+        vector<pair<long long,int>> results;
+        if(conjunctive){
+            start_time = chrono::steady_clock::now();
+            results=filesys.conjunctive_query(query_terms,10);
+            for(int i=0;i<results.size();i++){
+                cout<<results[i].first<<" "<<results[i].second<<endl;
+            }
+            display_elapsed_time(start_time);
+        }
+        results.clear();
+        query_terms.clear();
+    }
 };
