@@ -5,7 +5,8 @@
 #include <chrono>
 #include <sstream>
 #include <unordered_map>
-// #include "mysql/jdbc.h"
+#include <math.h>
+#include <mysql/jdbc.h>
 using namespace std;
 
 const string SERVER = "wse-document-do-user-10132967-0.b.db.ondigitalocean.com";
@@ -15,6 +16,9 @@ const string DB="defaultdb";
 const string LEXICON_FILE="lexicon.txt";
 chrono::steady_clock::time_point start_time = chrono::steady_clock::now();
 const string INDEX_FILE="inverted_index.txt";
+const string DOCMAP_FILE="docMap.txt";
+const string DOC_LOOKUP_FILE="doc_lookup.txt";
+const int MAXDOCID=3213834;
 
 //display elapsed time
 void display_elapsed_time(chrono::steady_clock::time_point start){
@@ -51,7 +55,35 @@ unordered_map<string, long long> load_lexicon(string lexicon_file){
     while(file>>term>>pos){
         lexicon.insert(make_pair(term,pos));
     }
+    file.close();
     return lexicon;
+}
+
+vector<string> load_docMap(string docMap_file){
+    ifstream file;
+    file.open(docMap_file, ios::in);
+    string url;
+    int docID;
+    vector<string> docMap;
+    while(file>>docID>>url){
+        docMap.push_back(url);
+    }
+    file.close();
+    return docMap;
+}
+
+vector<pair<long long,int>> load_docLookup(string doc_lookup_file){
+    ifstream file;
+    file.open(doc_lookup_file, ios::in);
+    int word_count;
+    long long pos;
+    int docID;
+    vector<pair<long long,int>> doc_lookup;
+    while(file>>docID>>pos>>word_count){
+        doc_lookup.push_back(make_pair(pos,word_count));
+    }
+    file.close();
+    return doc_lookup;
 }
 
 struct ListPointer{
@@ -68,6 +100,7 @@ struct ListPointer{
     int block_count;
     unsigned char buffer[320];
     int next_pos;
+    pair<int,int> current_posting;
 
     ListPointer(long long lexiconPos){
         cout<<"initializing list pointer"<<endl;
@@ -136,74 +169,134 @@ pair<int,int> nextGEQ(ListPointer* lp, int k){
     }
     cout<<"lp->current_block: "<<lp->current_block<<" lp->block_count:"<<lp->block_count<<endl;
     if(lp->current_block>lp->block_count){
-        return make_pair(-1,0);
+        lp->current_posting=make_pair(MAXDOCID+1,0);
+        return lp->current_posting;
     }
     for(int i=0;i<lp->block.size()/2;i++){
         cout<<lp->block[i]<<endl;
         if(lp->block[i]>=k){
-            return make_pair(lp->block[i],lp->block[i+lp->block.size()/2]);
+            lp->current_posting=make_pair(lp->block[i],lp->block[i+lp->block.size()/2]);
+            return lp->current_posting;
         }
     }
-    return make_pair(-1,0);
+    return lp->current_posting;
+}
+
+bool comparison(pair<int,int> p1, pair<int,int> p2){
+    if(p1.second<p2.second){
+        return false;
+    }
+    return true;
+}
+
+bool normal_comparison(pair<int,int> p1, pair<int,int> p2){
+    if(p1.second<p2.second){
+        return true;
+    }
+    return true;
 }
 
 class FileSys{
     public:
-        FileSys(string lexicon_file){
-            lexicon=load_lexicon(lexicon_file);
+        FileSys(){
+            //load lexicon and docMap
+            lexicon=load_lexicon(LEXICON_FILE);
+            docMap=load_docMap(DOCMAP_FILE);
+            doc_lookup=load_docLookup(DOC_LOOKUP_FILE);
         }
         ListPointer* open_term(string term){
             lp=new ListPointer(lexicon[term]);
             return lp;
         }
+        vector<pair<int,int>> conjunctive(vector<string> query,int k){
+            vector<ListPointer*> lps;
+            for(int i=0; i<query.size();i++){
+                lps.push_back(open_term(query[i]));
+            }
+            int docID=0;
+            int d;
+            int impact_score=0;
+            vector<pair<int,int>> result;
+            make_heap(result.begin(),result.end(),comparison);
+            while(docID<=MAXDOCID){
+                docID=nextGEQ(lps[0],docID).first;
+                impact_score=0;
+                for (int i=1; (i<query.size()) && ((d=(nextGEQ(lps[i], docID)).first) == docID); i++);
+                if(d>docID){
+                    docID=d;
+                }
+                else{
+                    for(int i=0; i<query.size();i++){
+                        impact_score+=impactScore(lps[i]);
+                    }
+                    if(result.size()<k){
+                        result.push_back(make_pair(docID,impact_score));
+                        std::push_heap (result.begin(),result.end());
+                    }
+                    else{
+                        if(result.front().second<impact_score){
+                            pop_heap(result.begin(),result.end());
+                            result.pop_back();
+                            result.push_back(make_pair(docID,impact_score));
+                            std::push_heap (result.begin(),result.end());
+                        }
+                    }
+                    docID++;
+                }
+
+            }
+            sort_heap(result.begin(),result.end(),normal_comparison);
+            return result;
+        }
+        float impactScore(ListPointer* lp){
+            int N=MAXDOCID+1;
+            int ft=lp->docID_count;
+            int fdt=lp->current_posting.second;
+            int d = doc_lookup[lp->current_posting.first].second;
+            int davg=1129;
+            float k1=1.2;
+            float b=0.75;
+            float score;
+            float K;
+            K=k1*((1-b)+b*(d/davg));
+            score=log((N-ft+0.5)/(ft+0.5))*(k1+1)*fdt/(K+fdt);
+            return score;
+        }
+
     private:
         unordered_map<string, long long> lexicon;
+        vector<pair<long long,int>> doc_lookup;
+        vector<string> docMap;
         ListPointer* lp;
 };
 
 int main(){
     string input;
-    
     string term;
-    // sql::mysql::MySQL_Driver *driver;
-    // sql::Connection *con;
-    // sql::Statement *stmt;
-    // sql::ResultSet  *res;
-    // driver = sql::mysql::get_mysql_driver_instance();
-    // con = driver->connect(SERVER, USERNAME, PASSWORD);
-    // stmt = con->createStatement();
-    // stmt->execute("USE defaultdb");
-    // stmt->execute("DROP TABLE IF EXISTS test");
-    // stmt->execute("CREATE TABLE test(id INT, label CHAR(1))");
-    // stmt->execute("INSERT INTO test(id, label) VALUES (1, 'a')");
-    // res = stmt->executeQuery("SELECT *");
-
-    // while(res->next()){
-    //     cout << "id = " << res->getInt(1);
-    //     cout << ", label = '" << res->getString("label") << "'" << endl;
-    // }
-
 
     // unordered_map<string,long long> lexicon=load_lexicon(LEXICON_FILE);
-    FileSys filesys("lexicon.txt");
-    cout<<"filesys initialized"<<endl;
-    display_elapsed_time(start_time);
-    ListPointer* example;
-    example=filesys.open_term("accepted");
-    cout<<"opened term"<<endl;
-    display_elapsed_time(start_time);
-    pair<int,int> result;
-    result=nextGEQ(example,1);
-    cout<<"result of nextGEQ(1) is "<<result.first<<" "<<result.second<<endl;
-    display_elapsed_time(start_time);
-    result=nextGEQ(example,1693);
-    cout<<"result of nextGEQ(1693) is "<<result.first<<" "<<result.second<<endl;
-    display_elapsed_time(start_time);
-
-    vector<vector<string>> query_terms;
-    vector<string> term_group;
-    cout<<"loaded lexicon"<<endl;
-    display_elapsed_time(start_time);
+    // FileSys filesys();
+    // cout<<"filesys initialized"<<endl;
+    // display_elapsed_time(start_time);
+    // ListPointer* example;
+    // example=filesys.open_term("accepted");
+    // cout<<"opened term"<<endl;
+    // display_elapsed_time(start_time);
+    // pair<int,int> result;
+    // result=nextGEQ(example,1);
+    // cout<<"result of nextGEQ(1) is "<<result.first<<" "<<result.second<<endl;
+    // display_elapsed_time(start_time);
+    // result=nextGEQ(example,1693);
+    // cout<<"result of nextGEQ(1693) is "<<result.first<<" "<<result.second<<endl;
+    // display_elapsed_time(start_time);
+    // result=nextGEQ(example,4548);
+    // cout<<"result of nextGEQ(458) is "<<result.first<<" "<<result.second<<endl;
+    // display_elapsed_time(start_time);
+    // cout<<"result of impactscore(lp) is "<<impactScore(example)<<endl;
+    // vector<vector<string>> query_terms;
+    // vector<string> term_group;
+    // cout<<"loaded lexicon"<<endl;
+    // display_elapsed_time(start_time);
     // cout<<lexicon["accepted"]<<endl;
     // query processer 
     // while(true){
