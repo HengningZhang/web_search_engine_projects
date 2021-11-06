@@ -175,16 +175,22 @@ bool comparison(const tuple<int,float,vector<pair<string,int>>>& p1, const tuple
     return get<1>(p1)>get<1>(p2);
 }
 
+bool merger_comparison(pair<tuple<int,float,vector<pair<string,int>>>,int> p1, pair<tuple<int,float,vector<pair<string,int>>>,int> p2){
+    return get<1>(p1.first)<get<1>(p2.first);
+}
 
 string to_lower(string s){
     string result;
     for(int i=0;i<s.size();i++){
-        try{
-            result.push_back(tolower(s[i]));
+        if(s[i]!=',' && s[i]!='.' && s[i]!='!' && s[i]!='?' && s[i]!='"'){
+            try{
+                result.push_back(tolower(s[i]));
+            }
+            catch(const exception e){
+                return "";
+            }
         }
-        catch(const exception e){
-            return "";
-        }
+        
     }
     return result;
 }
@@ -207,6 +213,7 @@ class FileSys{
             vector<ListPointer*> lps;
             vector<tuple<int,float,vector<pair<string,int>>>> result;
             ListPointer* lp;
+            //open listpointers for each query term, return empty result if some of the terms do not exist
             for(int i=0; i<query.size();i++){
                 lp=open_term(query[i]);
                 if(lp==nullptr){
@@ -219,9 +226,11 @@ class FileSys{
             float impact_score=0;
             // holds docID and freq for cur_term
             pair<int,int> cur_term;
+            // stores each term's occurance in each doc that contains all query terms
             vector<pair<string,int>> posting_info;
             make_heap(result.begin(),result.end(),comparison);
             while(docID<=MAXDOCID){
+                // get the next docID that contains the first query term
                 cur_term=nextGEQ(lps[0],docID);
                 docID=cur_term.first;
                 posting_info.clear();
@@ -283,7 +292,7 @@ class FileSys{
             return score;
         }
         void show_snippets(const vector<tuple<int,float,vector<pair<string,int>>>>& docIDs, const vector<string>& query){
-            ofstream ofile("testing.txt");
+            ofstream ofile("output.txt");
             vector<pair<string,int>> word_freqs;
             pair<string,int> word_freq;
             for(int i=0;i<docIDs.size();i++){
@@ -346,7 +355,7 @@ class FileSys{
                             min_interval=make_pair(lp,rp);  
                             min_len=rp-lp;                      
                         }
-                        lp++;
+                        
                         curword=to_lower(doc[lp]);
                         if(occurance.find(curword)!=occurance.end()){
                             occurance[curword]--;
@@ -354,6 +363,7 @@ class FileSys{
                                 count--;
                             } 
                         }
+                        lp++;
                         continue;
                     }
 
@@ -370,15 +380,89 @@ class FileSys{
                     rp++;
                 }
             }
-            
             int maxPos=doc.size();
-            for(int i=max(0,min_interval.first-10);i<min(min_interval.second+10,maxPos);i++){
-                result.append(doc[i]+" ");
+            // if too long, hide the middle part and only get two 20-word string
+            if(min_len>50){
+                for(int i=max(0,min_interval.first-10);i<min_interval.first+10;i++){
+                    result.append(doc[i]+" ");
+                }
+                result.append("...... ");
+                for(int i=min_interval.second-10;i<min(min_interval.second+10,maxPos);i++){
+                    result.append(doc[i]+" ");
+                }
             }
+            //else get the whole window
+            else{
+                for(int i=max(0,min_interval.first-10);i<min(min_interval.second+10,maxPos);i++){
+                    result.append(doc[i]+" ");
+                }
+            }
+            
             doc.clear();
             cout<<"length:"<<min_len<<endl;
             return result;
         }
+        vector<pair<tuple<int,float,vector<pair<string,int>>>,int>> disjunctive_query(vector<vector<string>>& disjunctive_query_terms){
+            vector<vector<tuple<int,float,vector<pair<string,int>>>>> disjunctive_results;
+            vector<pair<tuple<int,float,vector<pair<string,int>>>,int>> disjunctive_merger;
+            vector<vector<pair<tuple<int,float,vector<pair<string,int>>>,int>>> disjunctive_mergers;
+            pair<tuple<int,float,vector<pair<string,int>>>,int> d_result;
+            vector<pair<tuple<int,float,vector<pair<string,int>>>,int>> results;
+            int disjunctive_result_count=0;
+            ofstream ofile("output.txt");
+            ofile<<"disjunctive query results"<<endl;
+            for(int i=0;i<disjunctive_query_terms.size();i++){
+                disjunctive_results.push_back(conjunctive_query(disjunctive_query_terms[i],RESULT_COUNT));
+                int count=disjunctive_results[i].size();
+                disjunctive_result_count+=count;
+                for(int j=0;j<min(RESULT_COUNT,count);j++){
+                    disjunctive_merger.push_back(make_pair(disjunctive_results[i][j],i));
+                }
+                disjunctive_mergers.push_back(disjunctive_merger);
+                make_heap(disjunctive_mergers[i].begin(),disjunctive_mergers[i].end(),merger_comparison);
+                disjunctive_merger.clear();
+            }
+            for(int i=0;i<disjunctive_query_terms.size();i++){
+                disjunctive_merger.push_back(disjunctive_mergers[i].front());
+                pop_heap(disjunctive_mergers[i].begin(),disjunctive_mergers[i].end(),merger_comparison);
+                disjunctive_mergers[i].pop_back();
+            }
+            make_heap(disjunctive_merger.begin(),disjunctive_merger.end(),merger_comparison);
+            cout<<"got "<<min(RESULT_COUNT,disjunctive_result_count)<<" results"<<endl;
+            for(int i=0;i<min(RESULT_COUNT,disjunctive_result_count);i++){
+                //get the results with higher impact scores
+                d_result=disjunctive_merger.front();
+                results.push_back(d_result);
+                ofile<<get<0>(d_result.first)<<" BM25 score="<<get<1>(d_result.first)<<"\n";
+                ofile<<"Word frequencies:\n";
+                vector<pair<string,int>> word_freqs=get<2>(d_result.first);
+                pair<string,int> word_freq;
+                for(int j=0;j<word_freqs.size();j++){
+                    word_freq=word_freqs[j];
+                    ofile<<word_freq.first<<" "<<word_freq.second<<" ";
+                }
+                ofile<<"\n";
+                ofile<<generate_snippet(get<0>(d_result.first),disjunctive_query_terms[d_result.second])<<"\n";
+                if(i==min(RESULT_COUNT,disjunctive_result_count)-1){
+                    break;
+                }
+                pop_heap(disjunctive_merger.begin(),disjunctive_merger.end(),merger_comparison);
+                disjunctive_merger.pop_back();
+                disjunctive_merger.push_back(disjunctive_mergers[d_result.second].front());
+                push_heap(disjunctive_merger.begin(),disjunctive_merger.end(),merger_comparison);
+                pop_heap(disjunctive_mergers[d_result.second].begin(),disjunctive_mergers[d_result.second].end(),merger_comparison);
+                disjunctive_mergers[d_result.second].pop_back();
+            }
+            disjunctive_result_count=0;
+            disjunctive_mergers.clear();
+            disjunctive_merger.clear();
+            disjunctive_results.clear();
+            disjunctive_query_terms.clear();            
+            
+            ofile.close();
+            return results;
+        }
+
     private:
         unordered_map<string, long long> lexicon;
         vector<pair<long long,int>> doc_lookup;
@@ -386,9 +470,7 @@ class FileSys{
         ListPointer* lp;
 };
 
-bool merger_comparison(pair<tuple<int,float,vector<pair<string,int>>>,int> p1, pair<tuple<int,float,vector<pair<string,int>>>,int> p2){
-    return get<1>(p1.first)<get<1>(p2.first);
-}
+
 
 int main(){
     chrono::steady_clock::time_point start_time = chrono::steady_clock::now();
@@ -402,11 +484,7 @@ int main(){
     vector<string> query_terms;
     vector<tuple<int,float,vector<pair<string,int>>>> results;
     vector<vector<string>> disjunctive_query_terms;
-    vector<vector<tuple<int,float,vector<pair<string,int>>>>> disjunctive_results;
-    vector<pair<tuple<int,float,vector<pair<string,int>>>,int>> disjunctive_merger;
-    vector<vector<pair<tuple<int,float,vector<pair<string,int>>>,int>>> disjunctive_mergers;
-    pair<tuple<int,float,vector<pair<string,int>>>,int> d_result;
-    int disjunctive_result_count=0;
+    
     
     while(true){
         cout<<"input query:"<<endl;
@@ -426,69 +504,30 @@ int main(){
                 query_terms.push_back(to_lower(term));
             }
         }
-        string isconjunctive=conjunctive ? "conjunctive":"disjunctive";
         if(!conjunctive){
             disjunctive_query_terms.push_back(query_terms);
             query_terms.clear();
+            for(int i=0;i<disjunctive_query_terms.size();i++){
+                cout<<"[";
+                for(int j=0;j<disjunctive_query_terms[i].size();j++){
+                    cout<<disjunctive_query_terms[i][j]<<" ";
+                }
+                cout<<"]"<<endl;
+            }
         }
         start_time = chrono::steady_clock::now();
         if(conjunctive){
-            
             results=filesys.conjunctive_query(query_terms,RESULT_COUNT);
             cout<<"got "<<results.size()<<" results"<<endl;
-            sort(results.begin(),results.end(),comparison);
+            // sort(results.begin(),results.end(),comparison);
             filesys.show_snippets(results,query_terms);
             display_elapsed_time(start_time);
             results.clear();
             query_terms.clear();
         }
         else{
-            ofstream ofile("testing.txt");
-            ofile<<"disjunctive query results"<<endl;
-            for(int i=0;i<disjunctive_query_terms.size();i++){
-                disjunctive_results.push_back(filesys.conjunctive_query(disjunctive_query_terms[i],RESULT_COUNT));
-                int count=disjunctive_results[i].size();
-                disjunctive_result_count+=count;
-                for(int j=0;j<min(RESULT_COUNT,count);j++){
-                    disjunctive_merger.push_back(make_pair(disjunctive_results[i][j],i));
-                }
-                disjunctive_mergers.push_back(disjunctive_merger);
-                make_heap(disjunctive_mergers[i].begin(),disjunctive_mergers[i].end(),merger_comparison);
-                disjunctive_merger.clear();
-            }
-            for(int i=0;i<disjunctive_query_terms.size();i++){
-                disjunctive_merger.push_back(disjunctive_mergers[i].front());
-                pop_heap(disjunctive_mergers[i].begin(),disjunctive_mergers[i].end(),merger_comparison);
-                disjunctive_mergers[i].pop_back();
-            }
-            cout<<"got "<<min(RESULT_COUNT,disjunctive_result_count)<<" results"<<endl;
-            for(int i=0;i<min(RESULT_COUNT,disjunctive_result_count);i++){
-                //get the results with higher impact scores
-                d_result=disjunctive_merger.front();
-                ofile<<get<0>(d_result.first)<<" BM25 score="<<get<1>(d_result.first)<<"\n";
-                ofile<<"Word frequencies:\n";
-                vector<pair<string,int>> word_freqs=get<2>(d_result.first);
-                pair<string,int> word_freq;
-                for(int j=0;j<word_freqs.size();j++){
-                    word_freq=word_freqs[j];
-                    ofile<<word_freq.first<<" "<<word_freq.second<<" ";
-                }
-                ofile<<"\n";
-                ofile<<filesys.generate_snippet(get<0>(d_result.first),disjunctive_query_terms[d_result.second])<<"\n";
-                pop_heap(disjunctive_merger.begin(),disjunctive_merger.end(),merger_comparison);
-                disjunctive_merger.pop_back();
-                disjunctive_merger.push_back(disjunctive_mergers[d_result.second].front());
-                push_heap(disjunctive_merger.begin(),disjunctive_merger.end(),merger_comparison);
-                pop_heap(disjunctive_mergers[d_result.second].begin(),disjunctive_mergers[d_result.second].end(),merger_comparison);
-                disjunctive_mergers[d_result.second].pop_back();
-            }
-            disjunctive_result_count=0;
-            disjunctive_mergers.clear();
-            disjunctive_merger.clear();
-            disjunctive_results.clear();
-            disjunctive_query_terms.clear();            
+            filesys.disjunctive_query(disjunctive_query_terms);
             display_elapsed_time(start_time);
-            ofile.close();
         }
 
         

@@ -48,47 +48,47 @@ int varbyte_decode(unsigned char buffer[], int& array_pos){
 
 int main(){
     chrono::steady_clock::time_point start_time = chrono::steady_clock::now();
-    // ofstream test("testing.txt",ios::out);
-    // ifstream docs("fulldocs-new.trec",ios::in);
+    ofstream test("testing.txt",ios::out);
+    ifstream docs("fulldocs-new.trec",ios::in);
     
-    // unsigned char buffer [8];
-    // docs.seekg(18461334141);
-    // docs.read((char*) buffer,8);
-    // int pos=0;
-    // string word;
-    // for(int i=0;i<301;i++){
-    //     docs>>word;
-    //     test<<word<<" ";
-    // }
+    unsigned char buffer [8];
+    docs.seekg(21907738149);
+    docs.read((char*) buffer,8);
+    int pos=0;
+    string word;
+    for(int i=0;i<204;i++){
+        docs>>word;
+        test<<word<<" ";
+    }
     
     // display_elapsed_time(start_time);
-    vector<pair<int,int>> vec;
-    vec.push_back(make_pair(1,2));
-    make_heap(vec.begin(),vec.end(),comparison);
-    vec.push_back(make_pair(1,6));
-    push_heap(vec.begin(),vec.end(),comparison);
-    vec.push_back(make_pair(1,3));
-    push_heap(vec.begin(),vec.end(),comparison);
-    vec.push_back(make_pair(1,4));
-    push_heap(vec.begin(),vec.end(),comparison);
-    vec.push_back(make_pair(1,8));
-    push_heap(vec.begin(),vec.end(),comparison);
-    vec.push_back(make_pair(1,5));
-    push_heap(vec.begin(),vec.end(),comparison);
-    vec.push_back(make_pair(1,7));
-    push_heap(vec.begin(),vec.end(),comparison);
-    cout<<vec.front().second<<endl;
-    pop_heap(vec.begin(),vec.end(),comparison);
-    vec.pop_back();
-    for(int i=0;i<vec.size();i++){
-        cout<<vec[i].second<<endl;
-    }
+    // vector<pair<int,int>> vec;
+    // vec.push_back(make_pair(1,2));
+    // make_heap(vec.begin(),vec.end(),comparison);
+    // vec.push_back(make_pair(1,6));
+    // push_heap(vec.begin(),vec.end(),comparison);
+    // vec.push_back(make_pair(1,3));
+    // push_heap(vec.begin(),vec.end(),comparison);
+    // vec.push_back(make_pair(1,4));
+    // push_heap(vec.begin(),vec.end(),comparison);
+    // vec.push_back(make_pair(1,8));
+    // push_heap(vec.begin(),vec.end(),comparison);
+    // vec.push_back(make_pair(1,5));
+    // push_heap(vec.begin(),vec.end(),comparison);
+    // vec.push_back(make_pair(1,7));
+    // push_heap(vec.begin(),vec.end(),comparison);
+    // cout<<vec.front().second<<endl;
+    // pop_heap(vec.begin(),vec.end(),comparison);
+    // vec.pop_back();
+    // for(int i=0;i<vec.size();i++){
+    //     cout<<vec[i].second<<endl;
+    // }
     
-    cout<<"\n";
-    sort_heap(vec.begin(),vec.end(),comparison);
-    for(int i=0;i<vec.size();i++){
-        cout<<vec[i].second<<endl;
-    }
+    // cout<<"\n";
+    // sort_heap(vec.begin(),vec.end(),comparison);
+    // for(int i=0;i<vec.size();i++){
+    //     cout<<vec[i].second<<endl;
+    // }
     
     // ifstream docs("inverted_index.txt",ios::in);
     // unsigned char buffer [1000];
