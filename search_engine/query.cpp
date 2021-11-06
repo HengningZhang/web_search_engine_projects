@@ -305,6 +305,7 @@ class FileSys{
                 }
                 ofile<<"\n";
                 ofile<<generate_snippet(get<0>(docIDs[i]),query)<<"\n";
+                ofile<<"\n";
             }
             ofile.close();
         }
@@ -315,7 +316,6 @@ class FileSys{
             ifile.seekg(doc_lookup[docID].first);
             //output the url first
             ifile>>word;
-            cout<<word<<endl;
             string result;
             result.append(word+"\n");
             //load the other part of the document into a vector
@@ -334,7 +334,7 @@ class FileSys{
             int distinct_term=occurance.size();
             
             int min_len=INT_MAX;
-            pair<int,int> min_interval;
+            pair<int,int> min_interval=make_pair(-1,-1);
             int count=0;
             int lp=0;
             int rp=0;
@@ -381,8 +381,13 @@ class FileSys{
                 }
             }
             int maxPos=doc.size();
+            //if not found, return empty string
+            if(min_interval.first==-1){
+                result.append("snippet unavailable");
+                return result;
+            }
             // if too long, hide the middle part and only get two 20-word string
-            if(min_len>50){
+            else if(min_len>50){
                 for(int i=max(0,min_interval.first-10);i<min_interval.first+10;i++){
                     result.append(doc[i]+" ");
                 }
@@ -399,7 +404,6 @@ class FileSys{
             }
             
             doc.clear();
-            cout<<"length:"<<min_len<<endl;
             return result;
         }
         vector<pair<tuple<int,float,vector<pair<string,int>>>,int>> disjunctive_query(vector<vector<string>>& disjunctive_query_terms){
@@ -443,6 +447,7 @@ class FileSys{
                 }
                 ofile<<"\n";
                 ofile<<generate_snippet(get<0>(d_result.first),disjunctive_query_terms[d_result.second])<<"\n";
+                ofile<<"\n";
                 if(i==min(RESULT_COUNT,disjunctive_result_count)-1){
                     break;
                 }
@@ -504,6 +509,10 @@ int main(){
                 query_terms.push_back(to_lower(term));
             }
         }
+        for(int j=0;j<query_terms.size();j++){
+            cout<<query_terms[j]<<" ";
+        }
+        cout<<endl;
         if(!conjunctive){
             disjunctive_query_terms.push_back(query_terms);
             query_terms.clear();

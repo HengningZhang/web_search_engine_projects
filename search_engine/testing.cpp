@@ -45,22 +45,36 @@ int varbyte_decode(unsigned char buffer[], int& array_pos){
     val=val+((b-128)<<shift);
     return val;
 }
-
+string to_lower(string s){
+    string result;
+    for(int i=0;i<s.size();i++){
+        if(s[i]!=',' && s[i]!='.' && s[i]!='!' && s[i]!='?' && s[i]!='"'){
+            try{
+                result.push_back(tolower(s[i]));
+            }
+            catch(const exception e){
+                return "";
+            }
+        }
+        
+    }
+    return result;
+}
 int main(){
     chrono::steady_clock::time_point start_time = chrono::steady_clock::now();
     ofstream test("testing.txt",ios::out);
     ifstream docs("fulldocs-new.trec",ios::in);
     
     unsigned char buffer [8];
-    docs.seekg(21907738149);
+    docs.seekg(3344227399);
     docs.read((char*) buffer,8);
     int pos=0;
     string word;
-    for(int i=0;i<204;i++){
+    for(int i=0;i< 572;i++){
         docs>>word;
         test<<word<<" ";
     }
-    
+    cout<<to_lower("49,130")<<endl;
     // display_elapsed_time(start_time);
     // vector<pair<int,int>> vec;
     // vec.push_back(make_pair(1,2));
