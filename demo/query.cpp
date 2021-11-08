@@ -321,7 +321,7 @@ class FileSys{
         }
         //display snippets in an output file
         //it is just going through a vector and do some file writes
-        void show_snippets(const vector<tuple<int,float,vector<tuple<string,int,int>>>>& docIDs, const vector<string>& query){
+        void show_snippets(const vector<tuple<int,float,vector<tuple<string,int,int>>>>& docIDs){
             ofstream ofile("output.txt");
             vector<tuple<string,int,int>> word_freqs;
             tuple<string,int,int> word_freq;
@@ -335,13 +335,17 @@ class FileSys{
                     ofile<<get<0>(word_freq)<<" freq:"<<get<1>(word_freq)<<" total_posting:"<<get<2>(word_freq)<<" ";
                 }
                 ofile<<"\n";
-                ofile<<generate_snippet(get<0>(docIDs[i]),query)<<"\n";
+                ofile<<generate_snippet(get<0>(docIDs[i]),get<2>(docIDs[i]))<<"\n";
                 ofile<<"\n";
             }
             ofile.close();
         }
         //generate snippets by finding the smallest window that contain all query terms
-        string generate_snippet(int docID, const vector<string>& query){
+        string generate_snippet(int docID, const vector<tuple<string,int,int>>& match_terms){
+            vector<string> query;
+            for(int i=0;i<match_terms.size();i++){
+                query.push_back(get<0>(match_terms[i]));
+            }
             vector<string> doc;
             string word;
             ifstream ifile("fulldocs-new.trec",ios::in);
@@ -494,10 +498,6 @@ class FileSys{
             //if not found, return empty string
             if(min_interval.first==-1){
                 result.append("snippet unavailable\n");
-                for(int i=0;i<doc.size();i++){
-                    result.append(doc[i]+" ");
-                }
-                result.append("\n");
                 doc.clear();
                 return result;
             }
@@ -600,13 +600,13 @@ int main(){
         if(conjunctive){
             results=filesys.conjunctive_query(query_terms,RESULT_COUNT);
             cout<<"got "<<results.size()<<" results"<<endl;
-            filesys.show_snippets(results,query_terms);
+            filesys.show_snippets(results);
             display_elapsed_time(start_time);
         }
         else{
             results=filesys.disjunctive_query(query_terms,RESULT_COUNT);
             cout<<"got "<<results.size()<<" results"<<endl;
-            filesys.show_snippets(results,query_terms);
+            filesys.show_snippets(results);
             display_elapsed_time(start_time);
             
         }
